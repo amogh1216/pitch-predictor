@@ -1,3 +1,8 @@
 FastAPI
 uvicorn
 pydantic
+torch
+pandas
+numpy
+scikit-learn
+tqdm
