@@ -6,6 +6,14 @@ import logging
 from typing import List, Optional
 import sys
 
+import statsapi
+import espn_scraper as espn
+from datetime import date
+from datetime import datetime
+import pytz
+
+from fastapi.middleware.cors import CORSMiddleware
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -18,6 +26,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:8000"],  # Or ["*"] for all origins (dev only)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Load model config/specs
 with open("./model/best_pitch_predictor_lstm_meta.pkl", "rb") as f:
@@ -124,3 +140,81 @@ def predict_pitch(current_context: List[float], pitcher_id: int, batter_id: int,
         error_msg = f"Unexpected error during prediction: {str(e)}"
         logger.error(error_msg, exc_info=True)
         raise HTTPException(status_code=500, detail=error_msg)
+    
+
+"""
+FASTAPI endpoints for LIVE GAME DATA
+"""
+todays_statsapi_ids = []
+todays_espn_ids = []
+
+tz = pytz.timezone('America/Los_Angeles')
+today = datetime.now(tz)
+
+'''
+date format: YYYY-MM-DD
+gets todays games
+'''
+@app.get("/api/games")
+def get_scores_statsapi():
+    sched = statsapi.schedule(date=str(today)[:10])
+    sched_filter = []
+    todays_statsapi_ids = []
+    try:
+        for game in sched:
+            sched_filter.append({
+                "game_id": game.get('game_id'),
+                "game_datetime": game.get('game_datetime'),
+                "status": game.get('status'),
+                "away_score": game.get('away_score'),
+                "home_score": game.get('home_score'),
+                "current_inning": game.get('current_inning'),
+                "inning_state": game.get('inning_state'),
+                "summary": game.get('summary')
+            })
+            todays_statsapi_ids.append(game.get('game_id'))
+    except Exception as e:
+        return {"error": e}
+    return sched_filter
+
+'''
+has no use as of yet
+'''
+@app.get("/api/game/{id}")
+def get_game(id: int):
+    return {"game_info": id}
+
+'''
+Returns today's game ids from ESPN website.
+Format date in YYYYMMDD
+'''
+@app.get("/api/espn_games")
+def get_espn_game_ids():
+    ids = []
+    # format date correctly
+    date = str(today).replace('-', '')[:8]
+    print(date)
+    try:
+        
+        games = espn.get_url(f'https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard?dates={date}')['events']
+        for game in games:
+            if (today.day == datetime.fromisoformat(game['date']).day):
+                print(game['date'])
+            ids.append(game['id'])
+    except Exception as e:
+        print(f"An exception as occured: {e}")
+        return {"error": "{e}"}
+    
+    todays_espn_ids = ids
+    return ids
+
+'''
+returns play by play data for a given game id
+'''
+@app.get("/api/espn_games/{id}")
+def get_espn_game_pbp(id: str):
+    try:
+         game = espn.get_url(f"https://www.espn.com/mlb/playbyplay/_/gameId/{id}&_xhr=1")
+         return {'play-by-play': game['page']['content']['gamepackage']['pbp']}
+    except Exception as e:
+        return {"error": f"{e}"}

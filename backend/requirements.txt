@@ -1,4 +1,4 @@
-FastAPI
+fastapi[standard]
 uvicorn
 pydantic
 torch
@@ -6,3 +6,4 @@ pandas
 numpy
 scikit-learn
 tqdm
+MLB-StatsAPI

@@ -1,0 +1,7 @@
+pandas
+numpy
+MLB-StatsAPI
+scikit-learn
+seaborn
+matplotlib
+pybaseball
