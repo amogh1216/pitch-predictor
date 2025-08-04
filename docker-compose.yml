@@ -1,0 +1,23 @@
+services:
+
+  backend:
+    container_name: backend
+    image: backend_latest
+    build:
+      context: backend
+      dockerfile: Dockerfile
+      tags: ["backend:latest"]
+    ports:
+      - "8001:8001"
+    profiles: ["pitch"]
+  
+  frontend:
+    container_name: frontend
+    image: frontend_latest
+    build:
+      context: frontend
+      dockerfile: Dockerfile
+      tags: ["frontend:latest"]
+    ports:
+      - "8000:80"
+    profiles: ["pitch"]
