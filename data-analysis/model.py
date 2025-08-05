@@ -8,7 +8,7 @@ import pickle
 from tqdm import tqdm
 
 class BaseballPitchDataset(Dataset):
-    def __init__(self, df, parent_df, max_sequence_length=15):
+    def __init__(self, df, parent_df, batter_stats_df, pitcher_stats_df, max_sequence_length=15):
         self.max_seq_len = max_sequence_length
         self.df_len = len(df)
         
@@ -17,8 +17,7 @@ class BaseballPitchDataset(Dataset):
             'stand_R', 'p_throws_R', 'balls', 'strikes',
 
             'on_3b', 'on_2b', 'on_1b', 'outs_when_up', 'inning', 'inning_topbot_Top', 'at_bat_number', 'pitch_number',
-            'home_score', 'away_score', 'bat_score', 'fld_score', 'n_thruorder_pitcher', 'n_priorpa_thisgame_player_at_bat',
-            'prev_runs_scored'
+            'home_score', 'away_score', 'prev_runs_scored'
         ]
 
         self.parent_df = parent_df
@@ -32,11 +31,7 @@ class BaseballPitchDataset(Dataset):
             'description_ball', 'description_blocked_ball', 'description_called_strike', 'description_foul', 
             'description_foul_bunt', 'description_foul_tip', 'description_hit_by_pitch', 'description_hit_into_play', 
             'description_pitchout', 'description_swinging_strike', 'description_swinging_strike_blocked', 
-            'type_B', 'type_S', 'bb_type_fly_ball', 'bb_type_ground_ball', 'bb_type_line_drive', 'bb_type_popup', 
-            'zone_1.0', 'zone_2.0', 'zone_3.0', 'zone_4.0', 'zone_5.0', 'zone_6.0', 'zone_7.0', 'zone_8.0', 
-            'zone_9.0', 'zone_11.0', 'zone_12.0', 'zone_13.0', 'zone_14.0', 'zone_nan', 'hit_location_1.0', 'hit_location_2.0', 
-            'hit_location_3.0', 'hit_location_4.0', 'hit_location_5.0', 'hit_location_6.0', 'hit_location_7.0', 'hit_location_8.0', 
-            'hit_location_9.0', 'hit_location_nan'
+            'type_B', 'type_S'
         ]
         
         self.target = 'pitch_type_group'
@@ -52,6 +47,16 @@ class BaseballPitchDataset(Dataset):
         
         self.num_pitchers = len(self.pitcher_to_id)
         self.num_batters = len(self.batter_to_id)
+
+        self.batter_stats_df = batter_stats_df #.set_index('mlbID')
+        self.pitcher_stats_df = pitcher_stats_df #.set_index('mlbID')
+
+        self.pitcher_stat_cols = ['#days', 'Age', 'G', 'GS', 'W', 'L', 'SV', 'IP', 'H', 'R', 'ER', 'BB', 
+                                  'SO', 'HR', 'HBP', 'ERA', 'AB', '2B', '3B', 'IBB', 'GDP', 'SF', 'SB', 'CS', 'PO', 'BF', 'Pit', 
+                                  'Str', 'StL', 'StS', 'GB/FB', 'LD', 'PU', 'WHIP', 'BAbip', 'SO9', 'SO/W']
+        
+        self.batter_stat_cols = ['#days', 'Age', 'G', 'PA', 'AB', 'R', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'IBB', 'SO', 'HBP', 
+                                 'SH', 'SF', 'GDP', 'SB', 'CS', 'BA', 'OBP', 'SLG', 'OPS']   
         
         # Prepare encoders for other features
         self.label_encoders = {}
@@ -80,11 +85,6 @@ class BaseballPitchDataset(Dataset):
                 
             for i in range(len(group) - 1):
                 current_context = group.iloc[i][self.context_features].astype(float).values
-                # Convert each feature to float individually
-                # context_values = []
-                # for feature in self.context_features:
-                #     context_values.append(float(group.iloc[i][feature]))
-                # current_context = np.array(context_values, dtype=np.float32)
 
                 target_pitch = self.pitch_type_to_idx[group.iloc[i][self.target]] # group.iloc[i + 1][self.target]
                 
@@ -110,10 +110,6 @@ class BaseballPitchDataset(Dataset):
                 print("Detected stuck tqdm loop. Exiting and returning sequences.")
                 return sequences
             self._last_plate_app_id = plate_app_id
-
-            # print('plate app id: ', plate_app_id)
-
-        # print(f'sequences: {sequences}')
         
         return sequences
     
@@ -123,9 +119,13 @@ class BaseballPitchDataset(Dataset):
         # Context features
         context = torch.FloatTensor(sequence['context'])
         
+        # Player IDs as integers (not tensors yet)
+        pitcher_id_scalar = sequence['pitcher_id']
+        batter_id_scalar = sequence['batter_id']
+
         # Player IDs
-        pitcher_id = torch.LongTensor([sequence['pitcher_id']])
-        batter_id = torch.LongTensor([sequence['batter_id']])
+        pitcher_id = torch.LongTensor([pitcher_id_scalar])
+        batter_id = torch.LongTensor([batter_id_scalar])
         
         # Memory sequence (same as before)
         if sequence['memory_sequence'] is not None:
@@ -140,8 +140,21 @@ class BaseballPitchDataset(Dataset):
         
         memory_tensor = torch.FloatTensor(memory)
         target = torch.LongTensor([sequence['target']])
+
+        # added
+        pitcher_row = self.pitcher_stats_df[self.pitcher_stats_df['mlbID'] == pitcher_id_scalar]
+        if not pitcher_row.empty:
+            pitcher_stats_vec = torch.FloatTensor(pitcher_row[self.pitcher_stat_cols].values[0])
+        else:
+            pitcher_stats_vec = torch.zeros(len(self.pitcher_stat_cols))
+
+        batter_row = self.batter_stats_df[self.batter_stats_df['mlbID'] == batter_id_scalar]
+        if not batter_row.empty:
+            batter_stats_vec = torch.FloatTensor(batter_row[self.batter_stat_cols].values[0])
+        else:
+            batter_stats_vec = torch.zeros(len(self.batter_stat_cols))
         
-        return context, pitcher_id, batter_id, memory_tensor, target
+        return context, pitcher_id, batter_id, memory_tensor, pitcher_stats_vec, batter_stats_vec, target
 
     def save(self, filepath):
         with open(filepath, 'wb') as f:
@@ -153,17 +166,25 @@ class BaseballPitchDataset(Dataset):
             return pickle.load(f)
 
 class PitchPredictorLSTM(nn.Module):
-    def __init__(self, context_dim, memory_dim, num_pitchers, num_batters, 
-                 pitcher_embed_dim=32, batter_embed_dim=32, lstm_hidden_dim=128, 
+    def __init__(self, context_dim, memory_dim, num_pitchers, num_batters, pitcher_stats_dim=37, batter_stats_dim=24,
+                 pitcher_embed_dim=16, batter_embed_dim=16, lstm_hidden_dim=128, 
                  num_pitch_types=10, lstm_layers=2):
         super(PitchPredictorLSTM, self).__init__()
         
         self.lstm_hidden_dim = lstm_hidden_dim
         self.lstm_layers = lstm_layers
-        
-        # Player embeddings
-        self.pitcher_embedding = nn.Embedding(num_pitchers, pitcher_embed_dim)
-        self.batter_embedding = nn.Embedding(num_batters, batter_embed_dim)
+
+        # Pass player features through an MLP to create their embedding:
+        self.pitcher_feat_embed = nn.Sequential(
+            nn.Linear(pitcher_stats_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, pitcher_embed_dim)
+        )
+        self.batter_feat_embed = nn.Sequential(
+            nn.Linear(batter_stats_dim, 32),
+            nn.ReLU(),
+            nn.Linear(32, batter_embed_dim)
+        )
         
         # LSTM for processing previous pitches
         self.lstm = nn.LSTM(
@@ -192,17 +213,13 @@ class PitchPredictorLSTM(nn.Module):
             nn.ReLU(),
             nn.Linear(64, num_pitch_types)
         )
-        
-        # Initialize embeddings with small random values
-        nn.init.normal_(self.pitcher_embedding.weight, mean=0, std=0.1)
-        nn.init.normal_(self.batter_embedding.weight, mean=0, std=0.1)
-        
-    def forward(self, context, pitcher_ids, batter_ids, memory_sequence):
+                
+    def forward(self, context, pitcher_ids, batter_ids, memory_sequence, pitcher_stats, batter_stats):
         batch_size = memory_sequence.size(0)
-        
-        # Get embeddings
-        pitcher_embeds = self.pitcher_embedding(pitcher_ids.squeeze(-1)) #(pitcher_ids.squeeze(1))  # (batch_size, pitcher_embed_dim)
-        batter_embeds = self.batter_embedding(batter_ids.squeeze(-1)) # (batter_ids.squeeze(1))     # (batch_size, batter_embed_dim)
+
+        # Instead of nn.Embedding lookup, embed the stats vector
+        pitcher_embeds = self.pitcher_feat_embed(pitcher_stats)
+        batter_embeds = self.batter_feat_embed(batter_stats)
         
         # Process memory sequence through LSTM
         lstm_out, (hidden, cell) = self.lstm(memory_sequence)
@@ -221,36 +238,44 @@ class PitchPredictorLSTM(nn.Module):
         return output
 
 
-def load_training_data(csv, hasDataSet):
+def load_training_data(csv, hasDataSet, batter_stats_csv, pitcher_stats_csv):
+    print('reading batter csv')
+    batter_stats_df = pd.read_csv(batter_stats_csv)
+    print('read batter csv')
+
+    print('reading pitcher csv')
+    pitcher_stats_df = pd.read_csv(pitcher_stats_csv)
+    print('read pitcher csv')
+    
     if not hasDataSet:
         # Load your data
-        print('reading csv')
+        print('reading dataset csv')
         df = pd.read_csv(csv)
-        print('read csv')
+        print('read dataset csv')
 
         # Shuffle and split the DataFrame into train and validation sets
         train_df, val_df = train_test_split(df, test_size=0.2, random_state=42, shuffle=True)
 
         print('processing train dataset')
-        train_dataset = BaseballPitchDataset(train_df, df)
+        train_dataset = BaseballPitchDataset(train_df, df, batter_stats_df, pitcher_stats_df)
         print('processing val dataset')
-        val_dataset = BaseballPitchDataset(val_df, df)
+        val_dataset = BaseballPitchDataset(val_df, df, batter_stats_df, pitcher_stats_df)
         print('finished processing datasets')
 
         # Save the train and val datasets using pickle
-        with open('./data/train_dataset.pkl', 'wb') as f:
+        with open('./data/train_dataset_emb.pkl', 'wb') as f:
             pickle.dump(train_dataset, f)
-        with open('./data/val_dataset.pkl', 'wb') as f:
+        with open('./data/val_dataset_emb.pkl', 'wb') as f:
             pickle.dump(val_dataset, f)
         
         return train_dataset, val_dataset
     else:
         # Load the train and val datasets from pickle
         print('loading train_dataset from pickle')
-        with open('./data/train_dataset.pkl', 'rb') as f:
+        with open('./data/train_dataset_emb.pkl', 'rb') as f:
             train_dataset = pickle.load(f)
         print('loading val_dataset from pickle')
-        with open('./data/val_dataset.pkl', 'rb') as f:
+        with open('./data/val_dataset_emb.pkl', 'rb') as f:
             val_dataset = pickle.load(f)
         
         return train_dataset, val_dataset
@@ -269,8 +294,8 @@ def train_model(train_dataset, val_dataset):
             "memory_dim": len(train_dataset.memory_features),
             "num_pitchers": train_dataset.num_pitchers,
             "num_batters": train_dataset.num_batters,
-            "pitcher_embed_dim": 32,
-            "batter_embed_dim": 32,
+            "pitcher_embed_dim": 16,
+            "batter_embed_dim": 16,
             "lstm_hidden_dim": 128,
             "num_pitch_types": 4
         }
@@ -286,8 +311,10 @@ def train_model(train_dataset, val_dataset):
         memory_dim=len(train_dataset.memory_features),
         num_pitchers=train_dataset.num_pitchers,
         num_batters=train_dataset.num_batters,
-        pitcher_embed_dim=32,  # Reasonable size
-        batter_embed_dim=32,   # Reasonable size
+        pitcher_stats_dim=37, 
+        batter_stats_dim=24,
+        pitcher_embed_dim=16,  # Reasonable size
+        batter_embed_dim=16,   # Reasonable size
         lstm_hidden_dim=128,
         num_pitch_types=4 # ['FAST', 'OFF', 'BREAK', 'OTH']
     )
@@ -306,10 +333,11 @@ def train_model(train_dataset, val_dataset):
     for epoch in range(n_epochs):
         model.train()
         total_loss = 0
-        for context, pitcher_ids, batter_ids, memory_seq, targets in train_dataloader:
+        for context, pitcher_ids, batter_ids, memory_seq, pitcher_stats, batter_stats, targets in train_dataloader:
+            #print('lalal')
             optimizer.zero_grad()
             
-            outputs = model(context, pitcher_ids, batter_ids, memory_seq)
+            outputs = model(context, pitcher_ids, batter_ids, memory_seq, pitcher_stats, batter_stats)
             loss = criterion(outputs, targets.squeeze())
             
             loss.backward()
@@ -322,8 +350,8 @@ def train_model(train_dataset, val_dataset):
         model.eval()
         val_loss = 0
         with torch.no_grad():
-            for context, pitcher_ids, batter_ids, memory_seq, targets in val_dataloader:
-                outputs = model(context, pitcher_ids, batter_ids, memory_seq)
+            for context, pitcher_ids, batter_ids, memory_seq, pitcher_stats, batter_stats, targets in val_dataloader:
+                outputs = model(context, pitcher_ids, batter_ids, memory_seq, pitcher_stats, batter_stats)
                 loss = criterion(outputs, targets.squeeze())
                 val_loss += loss.item()
         avg_val_loss = val_loss / len(val_dataloader)
@@ -334,25 +362,25 @@ def train_model(train_dataset, val_dataset):
         if avg_val_loss < best_val_loss:
             best_val_loss = avg_val_loss
             epochs_no_improve = 0
-            torch.save(model.state_dict(), "best_pitch_predictor_lstm.pth")
-            with open("best_pitch_predictor_lstm_meta.pkl", "wb") as f:
+            torch.save(model.state_dict(), "pitch_predictor_lstm1.pth")
+            with open("pitch_predictor_lstm_meta1.pkl", "wb") as f:
                 pickle.dump(save_data, f)
         else:
             epochs_no_improve += 1
 
         if epochs_no_improve >= patience:
             print(f"Early stopping triggered after {epoch+1} epochs. Best Val Loss: {best_val_loss:.4f}")
-            model.load_state_dict(torch.load("best_pitch_predictor_lstm.pth"))
+            model.load_state_dict(torch.load("pitch_predictor_lstm1.pth"))
             return model
 
     # Save the trained model and metadata at the end as well
-    torch.save(model.state_dict(), "pitch_predictor_lstm.pth")
-    with open("pitch_predictor_lstm_meta.pkl", "wb") as f:
+    torch.save(model.state_dict(), "pitch_predictor_lstm1.pth")
+    with open("pitch_predictor_lstm_meta1.pkl", "wb") as f:
         pickle.dump(save_data, f)
     return model
 
 # For inference
-def predict_next_pitch(model, current_context, pitcher_id, batter_id, previous_pitches_in_pa):
+def predict_next_pitch(model, current_context, pitcher_id, batter_id, previous_pitches_in_pa, pitcher_stats, batter_stats):
     model.eval()
     with torch.no_grad():
         
@@ -361,7 +389,7 @@ def predict_next_pitch(model, current_context, pitcher_id, batter_id, previous_p
         batter_tensor = torch.LongTensor([batter_id])
         memory_tensor = torch.FloatTensor(previous_pitches_in_pa).unsqueeze(0)
         
-        prediction = model(context_tensor, pitcher_tensor, batter_tensor, memory_tensor)
+        prediction = model(context_tensor, pitcher_tensor, batter_tensor, memory_tensor, pitcher_stats, batter_stats)
         probabilities = torch.softmax(prediction, dim=1)
         
         return probabilities.numpy()
