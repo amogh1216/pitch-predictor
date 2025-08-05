@@ -36,7 +36,7 @@ app.add_middleware(
 )
 
 # Load model config/specs
-with open("./model/best_pitch_predictor_lstm_meta.pkl", "rb") as f:
+with open("./model/pitch_predictor_lstm_meta1.pkl", "rb") as f:
     meta = pickle.load(f)
 
 # Instantiate the model using the loaded specs
@@ -45,14 +45,14 @@ loaded_mod = model.PitchPredictorLSTM(
     memory_dim=meta["lstm_init_args"]['memory_dim'],
     num_pitchers=len(meta["pitcher_to_id"]),
     num_batters=len(meta["batter_to_id"]),
-    pitcher_embed_dim=32,
-    batter_embed_dim=32,
+    pitcher_embed_dim=16,
+    batter_embed_dim=16,
     lstm_hidden_dim=128,
     num_pitch_types=4
 )
 
 # Load the trained weights
-loaded_mod.load_state_dict(torch.load("./model/best_pitch_predictor_lstm.pth", map_location="cpu"))
+loaded_mod.load_state_dict(torch.load("./model/pitch_predictor_lstm1.pth", map_location="cpu"))
 
 @app.get("/")
 def root() -> dict[str, str]:
@@ -111,6 +111,32 @@ def predict_pitch(current_context: List[float], pitcher_id: int, batter_id: int,
                 memory_tensor = torch.tensor(previous_pitches_in_pa, dtype=torch.float32)
             else:
                 memory_tensor = None
+            
+            # load pitcher, batter data
+            batter_df = pd.read_csv('./data-analysis/data/batting_stats_23.csv')
+            pitcher_df = pd.read_csv('./data-analysis/data/pitching_stats_23.csv')
+
+            pitcher_stat_cols = ['#days', 'Age', 'G', 'GS', 'W', 'L', 'SV', 'IP', 'H', 'R', 'ER', 'BB', 
+                                            'SO', 'HR', 'HBP', 'ERA', 'AB', '2B', '3B', 'IBB', 'GDP', 'SF', 'SB', 'CS', 'PO', 'BF', 'Pit', 
+                                            'Str', 'StL', 'StS', 'GB/FB', 'LD', 'PU', 'WHIP', 'BAbip', 'SO9', 'SO/W']
+                    
+            batter_stat_cols = ['#days', 'Age', 'G', 'PA', 'AB', 'R', 'H', '2B', '3B', 'HR', 'RBI', 'BB', 'IBB', 'SO', 'HBP', 
+                                        'SH', 'SF', 'GDP', 'SB', 'CS', 'BA', 'OBP', 'SLG', 'OPS']
+
+            # added
+            #print(self.pitcher_stats_df.columns)
+            pitcher_row = pitcher_df[pitcher_df['mlbID'] == 506433]
+            if not pitcher_row.empty:
+                pitcher_stats_vec = torch.FloatTensor(pitcher_row[pitcher_stat_cols].values[0])
+            else:
+                pitcher_stats_vec = torch.zeros(len(pitcher_stat_cols))
+
+            batter_row = batter_df[batter_df['mlbID'] == 518595]
+            if not batter_row.empty:
+                batter_stats_vec = torch.FloatTensor(batter_row[batter_stat_cols].values[0])
+            else:
+                batter_stats_vec = torch.zeros(len(batter_stat_cols))
+
         except (ValueError, TypeError) as e:
             error_msg = f"Error converting inputs to tensors: {str(e)}"
             logger.error(error_msg)
@@ -119,7 +145,8 @@ def predict_pitch(current_context: List[float], pitcher_id: int, batter_id: int,
         # Make prediction
         try:
             with torch.no_grad():
-                probs = model.predict_next_pitch(loaded_mod, context_tensor, pitcher_tensor, batter_tensor, memory_tensor)
+                probs = model.predict_next_pitch(loaded_mod, context_tensor, pitcher_tensor, batter_tensor, memory_tensor, 
+                                                 pitcher_stats=pitcher_stats_vec.unsqueeze(0), batter_stats=batter_stats_vec.unsqueeze(0))
         except Exception as e:
             error_msg = f"Model prediction failed: {str(e)}"
             logger.error(error_msg)
