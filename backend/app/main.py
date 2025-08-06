@@ -218,6 +218,7 @@ Format date in YYYYMMDD
 @app.get("/api/espn_games")
 def get_espn_game_ids():
     ids = []
+    names = []
     # format date correctly
     date = str(today).replace('-', '')[:8]
     print(date)
@@ -228,12 +229,14 @@ def get_espn_game_ids():
             if (today.day == datetime.fromisoformat(game['date']).day):
                 print(game['date'])
             ids.append(game['id'])
+            names.append(game['name'])
     except Exception as e:
         print(f"An exception as occured: {e}")
         return {"error": "{e}"}
     
     todays_espn_ids = ids
-    return ids
+    todays_espn_names = names
+    return {"ids": todays_espn_ids, "names": todays_espn_names}
 
 '''
 returns play by play data for a given game id
