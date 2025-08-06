@@ -31,7 +31,10 @@ function parseGameSummary(summary: string) {
 
 function parseEspnName(espnName: string) {
   // Example: "Houston Astros at Miami Marlins"
-  const [away, home] = espnName.split(' at ');
+  let [away, home] = espnName.split(' at ');
+  // handle Athletics edge case
+  if (away === 'Athletics Athletics') away = 'Athletics';
+  if (home === 'Athletics Athletics') home = 'Athletics';
   return { away: away?.trim() || '', home: home?.trim() || '' };
 }
 
