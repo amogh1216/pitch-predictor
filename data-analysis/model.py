@@ -81,7 +81,7 @@ class BaseballPitchDataset(Dataset):
         pitch_types = ['FAST', 'OFF', 'BREAK', 'OTH']
         self.pitch_type_to_idx = {name: idx for idx, name in enumerate(pitch_types)}
         
-        for plate_app_id, group in tqdm(df.groupby('plate_app_id'), desc="Processing plate appearances"):
+        for player_game_id, group in tqdm(df.groupby('player_game_id'), desc="Processing plate appearances"):
             group = group.sort_values('pitch_number').reset_index(drop=True)
             
             if len(group) < 2:
@@ -108,12 +108,12 @@ class BaseballPitchDataset(Dataset):
                 })
 
             # If tqdm loop is stuck at the end, exit and return sequences
-            if not hasattr(self, '_last_plate_app_id'):
-                self._last_plate_app_id = None
-            if self._last_plate_app_id == plate_app_id:
+            if not hasattr(self, '_last_player_game_id'):
+                self._last_player_game_id = None
+            if self._last_player_game_id == player_game_id:
                 print("Detected stuck tqdm loop. Exiting and returning sequences.")
                 return sequences
-            self._last_plate_app_id = plate_app_id
+            self._last_player_game_id = player_game_id
         
         return sequences
     
@@ -273,19 +273,19 @@ def load_training_data(csv, hasDataSet, batter_stats_csv, pitcher_stats_csv):
         print('finished processing datasets f')
 
         # Save the train and val datasets using pickle
-        with open('./data/train_dataset_f_emb.pkl', 'wb') as f:
+        with open('./data/train_dataset_pitcher.pkl', 'wb') as f:
             pickle.dump(train_dataset, f)
-        with open('./data/val_dataset_f_emb.pkl', 'wb') as f:
+        with open('./data/val_dataset_pitcher.pkl', 'wb') as f:
             pickle.dump(val_dataset, f)
         
         return train_dataset, val_dataset
     else:
         # Load the train and val datasets from pickle
         print('loading train_dataset f from pickle')
-        with open('./data/train_dataset_f_emb.pkl', 'rb') as f:
+        with open('./data/train_dataset_pitcher.pkl', 'rb') as f:
             train_dataset = pickle.load(f)
         print('loading val_dataset f from pickle')
-        with open('./data/val_dataset_f_emb.pkl', 'rb') as f:
+        with open('./data/val_dataset_pitcher.pkl', 'rb') as f:
             val_dataset = pickle.load(f)
         
         return train_dataset, val_dataset
