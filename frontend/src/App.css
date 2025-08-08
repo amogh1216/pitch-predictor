@@ -402,9 +402,17 @@ body {
   color: #333;
 }
 
+.play-by-play-section {
+  transition: opacity 0.2s;
+  opacity: 1;
+}
+.play-by-play-section.fading {
+  opacity: 0.3;
+}
+
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 24px;
 }
@@ -462,6 +470,69 @@ body {
   font-weight: 600;
   color: #666;
   margin-bottom: 8px;
+}
+
+.pitches-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.pitch-card {
+  background: white;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  padding: 12px 8px;
+  text-align: center;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.pitch-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+
+.pitch-number {
+  font-size: 0.7rem;
+  color: #999;
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.pitch-speed {
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin-bottom: 4px;
+  transition: color 0.2s ease;
+}
+
+.pitch-speed.strike {
+  color: #dc3545;
+}
+
+.pitch-speed.foul {
+  color: #ffc107;
+}
+
+.pitch-speed.ball {
+  color: #28a745;
+}
+
+.pitch-speed.play {
+  color: #007bff;
+}
+
+.pitch-speed.default {
+  color: #666;
+}
+
+.pitch-result {
+  font-size: 0.75rem;
+  color: #666;
+  font-weight: 500;
+  text-transform: capitalize;
 }
 
 .pitches-list {

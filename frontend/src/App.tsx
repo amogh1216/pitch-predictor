@@ -43,16 +43,81 @@ function App() {
   const [games, setGames] = useState<Game[]>([]);
   const [selectedGame, setSelectedGame] = useState<Game | undefined>(undefined);
   const [playByPlay, setPlayByPlay] = useState<any[]>([]);
+  const [isFading, setIsFading] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
 
   async function fetchPlayByPlay(espn_id: string) {
     try {
+      setIsFading(true);
       const response = await fetch(`http://localhost:8001/api/espn_games/${espn_id}`);
       const data = await response.json();
-      setPlayByPlay(data['play-by-play'] || []);
+      // setPlayByPlay(data['play-by-play'] || []);
+      setTimeout(() => {
+        setPlayByPlay(data['play-by-play'] || []);
+        setIsFading(false); // Fade in new data
+      }, 200); // Duration of fade out (matches CSS, 200ms)
     } catch (error) {
       console.error(`Failed to fetch play-by-play for espn_id ${espn_id}:`, error);
       setPlayByPlay([]);
+      setIsFading(false);
+    }
+  }
+
+  async function fetchGames() {
+    try {
+      const response = await fetch('http://localhost:8001/api/games');
+      const data = await response.json();
+
+      const espnResponse = await fetch('http://localhost:8001/api/espn_games');
+      //const espnGameIds: string[] = await espnResponse.json();
+
+      const espnData = await espnResponse.json();
+
+      const normalizedData = data.map((game: any, index: number) => {
+        const espnName = espnData.names[index];
+        const espnId = espnData.ids[index];
+        
+        const { away: gameAway, home: gameHome } = parseGameSummary(game.summary);
+        const { away: espnAway, home: espnHome } = parseEspnName(espnName);
+        const teamsPart = `${gameAway} @ ${gameHome}`;
+
+        // Compare team names (simple case-sensitive exact match; can be improved with normalization)
+        // const isMatch = (gameAway.toLowerCase() === espnAway.toLowerCase()) && (gameHome.toLowerCase() === espnHome.toLowerCase());
+
+        let matchedEspnId: string | null = null;
+        let matchedEspnName: string | null = null;
+
+        // Search through ALL espnData names/ids
+        for (let i = 0; i < espnData.names.length; i++) {
+          const { away: espnAway, home: espnHome } = parseEspnName(espnData.names[i]);
+          if (
+            espnAway && espnHome &&
+            gameAway.toLowerCase() === espnAway.toLowerCase() &&
+            gameHome.toLowerCase() === espnHome.toLowerCase()
+          ) {
+            matchedEspnId = espnData.ids[i];
+            matchedEspnName = espnData.names[i];
+            break; // Stop at the first match
+          }
+        }
+
+        return {
+          ...game,
+          summary: teamsPart,
+          espn_id: matchedEspnId,
+          espn_name: matchedEspnName,
+          away_score: typeof game.away_score === 'string' ? parseInt(game.away_score) || 0 : game.away_score,
+          home_score: typeof game.home_score === 'string' ? parseInt(game.home_score) || 0 : game.home_score,
+          current_inning: game.current_inning === '' ? 0 : game.current_inning,
+          inning_state: game.inning_state || 'N/A',
+        };
+      });
+
+      console.log('Fetched and normalized games:', normalizedData);
+      setGames(normalizedData);
+    } catch (error) {
+      console.error('Failed to fetch games:', error);
+      setGames([]);
     }
   }
 
@@ -77,79 +142,33 @@ function App() {
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
-
-    async function fetchGames() {
-      try {
-        const response = await fetch('http://localhost:8001/api/games');
-        const data = await response.json();
-
-        const espnResponse = await fetch('http://localhost:8001/api/espn_games');
-        //const espnGameIds: string[] = await espnResponse.json();
-
-        const espnData = await espnResponse.json();
-  
-        // const normalizedData = data.map((game: any, index: number) => ({
-        //   ...game,
-        //   espn_id: espnGameIds[index] || null,
-        //   away_score: typeof game.away_score === 'string' ? parseInt(game.away_score) || 0 : game.away_score,
-        //   home_score: typeof game.home_score === 'string' ? parseInt(game.home_score) || 0 : game.home_score,
-        //   current_inning: game.current_inning === '' ? 0 : game.current_inning,
-        //   inning_state: game.inning_state || 'N/A',
-        // }));
-
-        const normalizedData = data.map((game: any, index: number) => {
-          const espnName = espnData.names[index];
-          const espnId = espnData.ids[index];
-          
-          const { away: gameAway, home: gameHome } = parseGameSummary(game.summary);
-          const { away: espnAway, home: espnHome } = parseEspnName(espnName);
-          const teamsPart = `${gameAway} @ ${gameHome}`;
-
-          // Compare team names (simple case-sensitive exact match; can be improved with normalization)
-          // const isMatch = (gameAway.toLowerCase() === espnAway.toLowerCase()) && (gameHome.toLowerCase() === espnHome.toLowerCase());
-
-          let matchedEspnId: string | null = null;
-          let matchedEspnName: string | null = null;
-
-          // Search through ALL espnData names/ids
-          for (let i = 0; i < espnData.names.length; i++) {
-            const { away: espnAway, home: espnHome } = parseEspnName(espnData.names[i]);
-            if (
-              espnAway && espnHome &&
-              gameAway.toLowerCase() === espnAway.toLowerCase() &&
-              gameHome.toLowerCase() === espnHome.toLowerCase()
-            ) {
-              matchedEspnId = espnData.ids[i];
-              matchedEspnName = espnData.names[i];
-              break; // Stop at the first match
-            }
-          }
-
-          return {
-            ...game,
-            summary: teamsPart,
-            espn_id: matchedEspnId,
-            espn_name: matchedEspnName,
-            away_score: typeof game.away_score === 'string' ? parseInt(game.away_score) || 0 : game.away_score,
-            home_score: typeof game.home_score === 'string' ? parseInt(game.home_score) || 0 : game.home_score,
-            current_inning: game.current_inning === '' ? 0 : game.current_inning,
-            inning_state: game.inning_state || 'N/A',
-          };
-        });
-  
-        console.log('Fetched and normalized games:', normalizedData);
-        setGames(normalizedData);
-      } catch (error) {
-        console.error('Failed to fetch games:', error);
-        setGames([]);
-      }
-    }
     
     fetchGames();
     intervalId = setInterval(fetchGames, 30_000);
     
     return () => clearInterval(intervalId);
   }, []);  
+
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | undefined;
+
+    // Only poll if details are shown and game has a valid espn_id
+    if (showDetails && selectedGame?.espn_id) {
+      // Fetch immediately once
+      fetchPlayByPlay(selectedGame.espn_id);
+
+      // Poll every 20 seconds
+      intervalId = setInterval(() => {
+        fetchPlayByPlay(selectedGame.espn_id!);
+        fetchGames();
+      }, 20000);
+    }
+
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [showDetails, selectedGame?.espn_id]);
+
 
   const formatDateTime = (dateTime: string) => {
     try {
@@ -176,6 +195,12 @@ function App() {
     (selectedGame.current_inning - 1) * 2 + (selectedGame.inning_state.toLowerCase() === 'top' ? 0 : 1) : null;
     
   const currentInningPlayByPlay = inningIndex !== null && playByPlay[0] ? playByPlay[0] : null;
+  const outsCount = Array.isArray(currentInningPlayByPlay?.plays)
+    ? currentInningPlayByPlay.plays.reduce((sum: number, play: any) => {
+        return sum + (typeof play.dsc === 'string' && play.dsc.toLowerCase().includes('out') ? 1 : 0);
+      }, 0) : 0;
+
+
 
   if (games.length === 0) {
     return (
@@ -264,9 +289,6 @@ function App() {
                     <span className="datetime">
                       {formatDateTime(selectedGame.game_datetime)}
                     </span>
-                    <span className="espn_name">
-                      {formatDateTime(selectedGame.espn_name)}
-                    </span>
                     {selectedGame.current_inning > 0 && (
                       <span className="inning">
                         {selectedGame.inning_state} {selectedGame.current_inning}
@@ -275,7 +297,7 @@ function App() {
                   </div>
                 </div>
 
-                <div className="play-by-play-section">
+                <div className={`play-by-play-section${isFading ? ' fading' : ''}`}>
                   <h4>Play-by-Play: Inning {selectedGame.current_inning} ({selectedGame.inning_state})</h4>
                   {currentInningPlayByPlay ? (
                     <div className="inning-stats">
@@ -292,32 +314,95 @@ function App() {
                           <span className="stat-label">Errors</span>
                           <span className="stat-value">{currentInningPlayByPlay.errors}</span>
                         </div>
+                        <div className="stat-item">
+                          <span className="stat-label">Outs</span>
+                          <span className="stat-value">{outsCount}</span>
+                        </div>
                       </div>
 
                       <div className="plays-list">
                         <h5>Recent Plays</h5>
                         {Array.isArray(currentInningPlayByPlay.plays) ? (
-                          currentInningPlayByPlay.plays.map((play: any, playIdx: number) => (
-                            <div key={playIdx} className="play-item">
-                              <div className="play-description">
-                                {play.dsc || "(No description)"}
-                              </div>
-                              {Array.isArray(play.pitches) && play.pitches.length > 0 && (
-                                <div className="pitches-container">
-                                  <div className="pitches-header">Pitches:</div>
-                                  <div className="pitches-list">
-                                    {play.pitches.map((pitch: any, pitchIdx: number) => (
-                                      <div key={pitchIdx} className="pitch-item">
-                                        <pre className="pitch-data">
-                                          {JSON.stringify(pitch, null, 2)}
-                                        </pre>
-                                      </div>
-                                    ))}
-                                  </div>
+                          currentInningPlayByPlay.plays.map((play: any, playIdx: number) => {
+                            let pitchCount: string | null = null;
+                            let ballsCount = 0;
+                            let strikesCount = 0;
+
+                            if (playIdx === 0 && Array.isArray(play.pitches) && play.pitches.length > 0) {
+                              // Get pitch count from most recent pitch (pitchIdx === 0)
+                              const mostRecentPitch = play.pitches[0];
+                              if (mostRecentPitch && mostRecentPitch.count) {
+                                pitchCount = mostRecentPitch.count.toString();
+                              }
+
+                              // Count balls and strikes across all pitches
+                              for (const pitch of play.pitches) {
+                                if (pitch.rslt === "strike") {
+                                  strikesCount++;
+                                } else if (pitch.rslt === "foul") {
+                                  if (strikesCount < 2) strikesCount++;
+                                } else if (pitch.rslt === "ball") {
+                                  ballsCount++;
+                                }
+                              }
+                            }
+
+                            return (
+                              <div key={playIdx} className="play-item">
+                                <div className="play-description">
+                                  {play.dsc || "(No description)"}
+                                  {/* Append pitch count and balls-strikes only for first play */}
+                                  {playIdx === 0 && pitchCount !== null && (
+                                    <> {" "} (Pitch count: {pitchCount}, Count: {ballsCount}-{strikesCount})</>
+                                  )}
                                 </div>
-                              )}
-                            </div>
-                          ))
+
+                                {Array.isArray(play.pitches) && play.pitches.length > 0 && (
+                                  <div className="pitches-container">
+                                    <div className="pitches-header">Pitches:</div>
+                                    
+                                    <div className="pitches-grid">
+                                      {play.pitches.map((pitch: any, pitchIdx: number) => {
+                                        const getPitchColor = (result: string) => {
+                                          switch(result?.toLowerCase()) {
+                                            case 'strike': return 'strike';
+                                            case 'foul': return 'foul';
+                                            case 'ball': return 'ball';
+                                            case 'play': return 'play';
+                                            default: return 'default';
+                                          }
+                                        };
+
+                                        return (
+                                          <div key={pitchIdx} className="pitch-card">
+                                            <div className="pitch-number">#{pitchIdx + 1}</div>
+                                            <div className={`pitch-speed ${getPitchColor(pitch?.rslt)}`}>
+                                              {pitch?.vlcty ? `${pitch.vlcty} mph` : 'N/A'}
+                                            </div>
+                                            <div className="pitch-result">
+                                              {pitch?.rslt || 'Unknown'}
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                    <div className="pitches-list">
+                                      {play.pitches.map((pitch: any, pitchIdx: number) => (
+                                        <div key={pitchIdx} className="pitch-item">
+                                          <pre className="pitch-data">
+                                            {JSON.stringify(pitch, null, 2)}
+                                          </pre>
+                                        </div>
+                                      ))}
+                                    </div>
+
+
+
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })
                         ) : (
                           <p className="no-data">No plays data available.</p>
                         )}
