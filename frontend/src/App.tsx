@@ -45,6 +45,7 @@ function App() {
   const [playByPlay, setPlayByPlay] = useState<any[]>([]);
   const [isFading, setIsFading] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
+  const [bases, setBases] = useState<boolean[]>([false, false, false]);
 
   async function fetchPlayByPlay(espn_id: string) {
     try {
@@ -122,6 +123,7 @@ function App() {
   }
 
   const handleGameSelect = (game: Game) => {
+    setBases([false, false, false]);
     if (selectedGame?.game_id === game.game_id && showDetails) {
       // If clicking the same game that's already selected, toggle details
       setShowDetails(false);
@@ -157,11 +159,11 @@ function App() {
       // Fetch immediately once
       fetchPlayByPlay(selectedGame.espn_id);
 
-      // Poll every 20 seconds
+      // Poll every 10 seconds
       intervalId = setInterval(() => {
         fetchPlayByPlay(selectedGame.espn_id!);
         fetchGames();
-      }, 20000);
+      }, 10000);
     }
 
     return () => {
@@ -191,6 +193,18 @@ function App() {
     return 'scheduled';
   };
 
+  const BaseIndicator = ({ bases }: { bases: boolean[] }) => {
+    // bases[0] = first base, bases[1] = second base, bases[2] = third base
+    return (
+      <div className="base-indicator">
+        <div className={`base first-base ${bases[0] ? 'occupied' : ''}`}></div>
+        <div className={`base second-base ${bases[1] ? 'occupied' : ''}`}></div>
+        <div className={`base third-base ${bases[2] ? 'occupied' : ''}`}></div>
+      </div>
+    );
+  };
+
+
   const inningIndex = selectedGame && selectedGame.current_inning ? 
     (selectedGame.current_inning - 1) * 2 + (selectedGame.inning_state.toLowerCase() === 'top' ? 0 : 1) : null;
     
@@ -199,8 +213,22 @@ function App() {
     ? currentInningPlayByPlay.plays.reduce((sum: number, play: any) => {
         return sum + (typeof play.dsc === 'string' && play.dsc.toLowerCase().includes('out') ? 1 : 0);
       }, 0) : 0;
-
-
+  
+  useEffect(() => {
+    if (currentInningPlayByPlay?.plays && currentInningPlayByPlay.plays.length > 0) {
+      // Find first pitch that has evnts with onBase
+      const firstPitchWithEvents = currentInningPlayByPlay.plays[0].pitches.find(
+        (pitch: any) => pitch.evnts && pitch.evnts.onBase
+      );
+      if (firstPitchWithEvents) {
+        setBases(firstPitchWithEvents.evnts.onBase); // Should be [bool, bool, bool]
+      } else {
+        // setBases([false, false, false]); // case where we're moving from plate to plate, don't want to replace
+      }
+    } else {
+      setBases([false, false, false]);
+    }
+  }, [currentInningPlayByPlay]);
 
   if (games.length === 0) {
     return (
@@ -322,6 +350,7 @@ function App() {
 
                       <div className="plays-list">
                         <h5>Recent Plays</h5>
+                        <BaseIndicator bases={bases} />
                         {Array.isArray(currentInningPlayByPlay.plays) ? (
                           currentInningPlayByPlay.plays.map((play: any, playIdx: number) => {
                             let pitchCount: string | null = null;
@@ -329,21 +358,23 @@ function App() {
                             let strikesCount = 0;
 
                             if (playIdx === 0 && Array.isArray(play.pitches) && play.pitches.length > 0) {
-                              // Get pitch count from most recent pitch (pitchIdx === 0)
+                              // // Get pitch count from most recent pitch (pitchIdx === 0)
                               const mostRecentPitch = play.pitches[0];
                               if (mostRecentPitch && mostRecentPitch.count) {
                                 pitchCount = mostRecentPitch.count.toString();
                               }
+                              // To process pitches in chronological order
+                              const pitchesChronological = [...play.pitches].reverse();
 
-                              // Count balls and strikes across all pitches
-                              for (const pitch of play.pitches) {
+                              for (const pitch of pitchesChronological) {
                                 if (pitch.rslt === "strike") {
-                                  strikesCount++;
+                                  if (strikesCount < 2) strikesCount++;
                                 } else if (pitch.rslt === "foul") {
                                   if (strikesCount < 2) strikesCount++;
                                 } else if (pitch.rslt === "ball") {
                                   ballsCount++;
                                 }
+                                // Optionally, break if ballsCount === 4 or strikesCount === 3
                               }
                             }
 
@@ -356,11 +387,11 @@ function App() {
                                     <> {" "} (Pitch count: {pitchCount}, Count: {ballsCount}-{strikesCount})</>
                                   )}
                                 </div>
+                                
 
                                 {Array.isArray(play.pitches) && play.pitches.length > 0 && (
                                   <div className="pitches-container">
                                     <div className="pitches-header">Pitches:</div>
-                                    
                                     <div className="pitches-grid">
                                       {play.pitches.map((pitch: any, pitchIdx: number) => {
                                         const getPitchColor = (result: string) => {
@@ -375,12 +406,15 @@ function App() {
 
                                         return (
                                           <div key={pitchIdx} className="pitch-card">
-                                            <div className="pitch-number">#{pitchIdx + 1}</div>
+                                            <div className="pitch-number">#{play.pitches.length - pitchIdx}</div>
                                             <div className={`pitch-speed ${getPitchColor(pitch?.rslt)}`}>
                                               {pitch?.vlcty ? `${pitch.vlcty} mph` : 'N/A'}
                                             </div>
                                             <div className="pitch-result">
-                                              {pitch?.rslt || 'Unknown'}
+                                              {pitch?.dsc || 'Unknown'}
+                                            </div>
+                                            <div className="pitch-dsc">
+                                              {pitch?.ptchDsc || 'Unknown'}
                                             </div>
                                           </div>
                                         );
