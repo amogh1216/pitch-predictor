@@ -542,6 +542,53 @@ body {
   color: #666;
 }
 
+/* Predicted pitch card styling */
+.predicted-pitch {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border: 2px solid #5a67d8;
+  color: white;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.3);
+}
+
+.predicted-pitch:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(102, 126, 234, 0.4);
+}
+
+.predicted-pitch .pitch-number {
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 700;
+  font-size: 0.75rem;
+}
+
+.predicted-highest {
+  font-size: 1.3rem !important;
+  font-weight: 800 !important;
+  color: #fff !important;
+  margin-bottom: 6px !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.predicted-main {
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+  margin-bottom: 8px !important;
+}
+
+.predicted-others {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.predicted-other {
+  font-size: 0.65rem;
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 500;
+  line-height: 1.1;
+}
+
 .base-indicator {
   position: relative;
   width: 120px;

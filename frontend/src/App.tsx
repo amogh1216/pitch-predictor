@@ -46,13 +46,29 @@ function App() {
   const [isFading, setIsFading] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [bases, setBases] = useState<boolean[]>([false, false, false]);
+  const [exportData, setExportData] = useState<any>(null);
+  const [predictedPitch, setPredictedPitch] = useState<{
+    FAST?: number;
+    OFF?: number;
+    BREAK?: number;
+    OTH?: number;
+  } | null>(null);
+
+  const [inningIndex, setInningIndex] = useState(0);
+  const [currentInningPlayByPlay, setCurrentInningPlayByPlay] = useState<any>(null);
+
+  let pitchCount: string | null = null;
+  let ballsCount = 0;
+  let strikesCount = 0;
+  let outsCount = 0;
 
   async function fetchPlayByPlay(espn_id: string) {
     try {
       setIsFading(true);
       const response = await fetch(`http://localhost:8001/api/espn_games/${espn_id}`);
       const data = await response.json();
-      // setPlayByPlay(data['play-by-play'] || []);
+      setPlayByPlay(data['play-by-play'] || []);
+
       setTimeout(() => {
         setPlayByPlay(data['play-by-play'] || []);
         setIsFading(false); // Fade in new data
@@ -122,6 +138,29 @@ function App() {
     }
   }
 
+  async function callPredictAPI() {
+    if (!exportData) {
+      console.error('No export data available for prediction');
+      return;
+    }
+    try {
+      console.log(`exportData: ${JSON.stringify(exportData)}`);
+      const response = await fetch("http://localhost:8001/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(exportData)
+      });
+      const result = await response.json();
+      console.log("Prediction result:", result);
+
+      // Save to state
+      setPredictedPitch(result.predictions);
+    } catch (error) {
+      console.error('Error calling predict_pitch:', error);
+    }
+  }
+
+
   const handleGameSelect = (game: Game) => {
     setBases([false, false, false]);
     if (selectedGame?.game_id === game.game_id && showDetails) {
@@ -142,14 +181,61 @@ function App() {
     setShowDetails(false);
   };
 
+  const getPredictionData = () => {
+    if (!predictedPitch) return null;
+
+    const predictions = [
+      { type: 'FAST', value: predictedPitch.FAST || 0 },
+      { type: 'OFF', value: predictedPitch.OFF || 0 },
+      { type: 'BREAK', value: predictedPitch.BREAK || 0 },
+      { type: 'OTH', value: predictedPitch.OTH || 0 }
+    ];
+
+    // Find the highest probability
+    const highest = predictions.reduce((max, current) => 
+      current.value > max.value ? current : max
+    );
+
+    // Sort others by value descending, excluding the highest
+    const others = predictions
+      .filter(p => p.type !== highest.type)
+      .sort((a, b) => b.value - a.value);
+
+    return { highest, others };
+  };
+
   useEffect(() => {
     let intervalId: NodeJS.Timeout;
     
     fetchGames();
     intervalId = setInterval(fetchGames, 30_000);
-    
+
+    if (selectedGame && selectedGame.current_inning) {
+      let top = selectedGame.inning_state.toLowerCase() === 'top' ? 0 : 1;
+      setInningIndex((selectedGame.current_inning - 1) * 2 + top);
+      // setInningIndex(0);
+    }
+    else setInningIndex(0);
+    console.log(`inning index: ${inningIndex} and playbyplay[0]: ${playByPlay}`);
+    if (inningIndex !== null && playByPlay[0]) {
+      setCurrentInningPlayByPlay(playByPlay[0]);
+    }
+    else setCurrentInningPlayByPlay(null);
+
+    if (currentInningPlayByPlay?.plays && currentInningPlayByPlay.plays.length > 0) {
+      // Find first pitch that has evnts with onBase
+      const firstPitchWithEvents = currentInningPlayByPlay.plays[0].pitches.find(
+        (pitch: any) => pitch.evnts && pitch.evnts.onBase
+      );
+      if (firstPitchWithEvents) {
+        setBases(firstPitchWithEvents.evnts.onBase); // Should be [bool, bool, bool]
+      }
+    } else {
+      setBases([false, false, false]);
+    }
+
     return () => clearInterval(intervalId);
-  }, []);  
+  }, [playByPlay, selectedGame]);  
 
   useEffect(() => {
     let intervalId: NodeJS.Timeout | undefined;
@@ -159,7 +245,6 @@ function App() {
       // Fetch immediately once
       fetchPlayByPlay(selectedGame.espn_id);
 
-      // Poll every 10 seconds
       intervalId = setInterval(() => {
         fetchPlayByPlay(selectedGame.espn_id!);
         fetchGames();
@@ -171,6 +256,10 @@ function App() {
     };
   }, [showDetails, selectedGame?.espn_id]);
 
+  useEffect(() => {
+    let intervalId: NodeJS.Timeout | undefined;
+    callPredictAPI();
+  }, [exportData]);
 
   const formatDateTime = (dateTime: string) => {
     try {
@@ -203,32 +292,44 @@ function App() {
       </div>
     );
   };
-
-
-  const inningIndex = selectedGame && selectedGame.current_inning ? 
-    (selectedGame.current_inning - 1) * 2 + (selectedGame.inning_state.toLowerCase() === 'top' ? 0 : 1) : null;
     
-  const currentInningPlayByPlay = inningIndex !== null && playByPlay[0] ? playByPlay[0] : null;
-  const outsCount = Array.isArray(currentInningPlayByPlay?.plays)
+  outsCount = Array.isArray(currentInningPlayByPlay?.plays)
     ? currentInningPlayByPlay.plays.reduce((sum: number, play: any) => {
         return sum + (typeof play.dsc === 'string' && play.dsc.toLowerCase().includes('out') ? 1 : 0);
       }, 0) : 0;
-  
+
   useEffect(() => {
-    if (currentInningPlayByPlay?.plays && currentInningPlayByPlay.plays.length > 0) {
-      // Find first pitch that has evnts with onBase
-      const firstPitchWithEvents = currentInningPlayByPlay.plays[0].pitches.find(
-        (pitch: any) => pitch.evnts && pitch.evnts.onBase
-      );
-      if (firstPitchWithEvents) {
-        setBases(firstPitchWithEvents.evnts.onBase); // Should be [bool, bool, bool]
-      } else {
-        // setBases([false, false, false]); // case where we're moving from plate to plate, don't want to replace
+    if (
+      Array.isArray(currentInningPlayByPlay?.plays) &&
+      currentInningPlayByPlay.plays.length > 0 &&
+      selectedGame
+    ) {
+      const play = currentInningPlayByPlay.plays[0];
+      if (Array.isArray(play.pitches) && play.pitches.length > 0) {
+        const gameState = {
+          ballsCount,
+          strikesCount,
+          bases,
+          outsCount,
+          inning: selectedGame.current_inning,
+          inningState: selectedGame.inning_state,
+          pitchCount,
+          awayScore: parseInt(selectedGame.away_score as string, 10) || 0,
+          homeScore: parseInt(selectedGame.home_score as string, 10) || 0,
+          runs: parseInt(currentInningPlayByPlay.runs as string, 10) || 0
+        };
+        const plateAppearanceData = {
+          vlcty: play.pitches.map((p: any) => p.vlcty || null),
+          rslt: play.pitches.map((p: any) => p.rslt || null),
+          dsc: play.pitches.map((p: any) => p.dsc || null),
+          ptchDsc: play.pitches.map((p: any) => p.ptchDsc || null)
+        };
+        const exportPayload = { gameState, plateAppearanceData };
+        setExportData(exportPayload);
       }
-    } else {
-      setBases([false, false, false]);
     }
-  }, [currentInningPlayByPlay]);
+  }, [currentInningPlayByPlay, bases, outsCount, selectedGame]);
+
 
   if (games.length === 0) {
     return (
@@ -353,15 +454,16 @@ function App() {
                         <BaseIndicator bases={bases} />
                         {Array.isArray(currentInningPlayByPlay.plays) ? (
                           currentInningPlayByPlay.plays.map((play: any, playIdx: number) => {
-                            let pitchCount: string | null = null;
-                            let ballsCount = 0;
-                            let strikesCount = 0;
+                            //let pitchCount: string | null = null;
+                            ballsCount = 0;
+                            strikesCount = 0;
 
                             if (playIdx === 0 && Array.isArray(play.pitches) && play.pitches.length > 0) {
                               // // Get pitch count from most recent pitch (pitchIdx === 0)
                               const mostRecentPitch = play.pitches[0];
                               if (mostRecentPitch && mostRecentPitch.count) {
                                 pitchCount = mostRecentPitch.count.toString();
+                                // setPitchCount(mostRecentPitch.count.toString());
                               }
                               // To process pitches in chronological order
                               const pitchesChronological = [...play.pitches].reverse();
@@ -377,7 +479,6 @@ function App() {
                                 // Optionally, break if ballsCount === 4 or strikesCount === 3
                               }
                             }
-
                             return (
                               <div key={playIdx} className="play-item">
                                 <div className="play-description">
@@ -387,12 +488,47 @@ function App() {
                                     <> {" "} (Pitch count: {pitchCount}, Count: {ballsCount}-{strikesCount})</>
                                   )}
                                 </div>
-                                
 
                                 {Array.isArray(play.pitches) && play.pitches.length > 0 && (
                                   <div className="pitches-container">
                                     <div className="pitches-header">Pitches:</div>
                                     <div className="pitches-grid">
+
+                                      {predictedPitch && (() => {
+                                        const predictionData = getPredictionData();
+                                        if (predictionData && playIdx === 0 && selectedGame.status !== "Final") {
+                                          return (
+                                            <div className="pitch-card predicted-pitch">
+                                              <div className="pitch-number">Predicted</div>
+                                              <div className="pitch-speed predicted-highest">
+                                                {predictionData.highest.type}
+                                              </div>
+                                              <div className="pitch-result predicted-main">
+                                                {(predictionData.highest.value * 100).toFixed(1)}%
+                                              </div>
+                                              <div className="predicted-others">
+                                                {predictionData.others.map((pred, idx) => (
+                                                  <div key={idx} className="predicted-other">
+                                                    {pred.type}: {(pred.value * 100).toFixed(1)}%
+                                                  </div>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          );
+                                        }
+                                        else if (playIdx === 0 && selectedGame.status !== "Final") {
+                                          return (
+                                            <div className="pitch-card predicted-pitch">
+                                                <div className="pitch-number">Predicted</div>
+                                                <div className="pitch-speed predicted-highest">
+                                                  Not Available
+                                                </div>
+                                              </div>
+                                          );
+                                        }
+                                        return null;
+                                      })()}
+
                                       {play.pitches.map((pitch: any, pitchIdx: number) => {
                                         const getPitchColor = (result: string) => {
                                           switch(result?.toLowerCase()) {
@@ -420,18 +556,6 @@ function App() {
                                         );
                                       })}
                                     </div>
-                                    <div className="pitches-list">
-                                      {play.pitches.map((pitch: any, pitchIdx: number) => (
-                                        <div key={pitchIdx} className="pitch-item">
-                                          <pre className="pitch-data">
-                                            {JSON.stringify(pitch, null, 2)}
-                                          </pre>
-                                        </div>
-                                      ))}
-                                    </div>
-
-
-
                                   </div>
                                 )}
                               </div>

@@ -14,7 +14,7 @@ class BaseballPitchDataset(Dataset):
         
          # Features known BEFORE pitch is thrown, not include 'batter', 'pitcher' ids
         self.context_features = [
-            'stand_R', 'p_throws_R', 'balls', 'strikes',
+            'p_throws_R', 'balls', 'strikes',
 
             'on_3b', 'on_2b', 'on_1b', 'outs_when_up', 'inning', 'inning_topbot_Top', 'at_bat_number', 'pitch_number',
             'home_score', 'away_score', 'prev_runs_scored'
@@ -24,13 +24,13 @@ class BaseballPitchDataset(Dataset):
                 
         # Features from PREVIOUS pitches (memory)
         self.memory_features = [
-            'release_speed', 'release_pos_y',
+            'release_speed',
 
             'pitch_type_group_BREAK', 'pitch_type_group_FAST', 'pitch_type_group_OFF',
 
-            'description_ball', 'description_blocked_ball', 'description_called_strike', 'description_foul', 
-            'description_foul_bunt', 'description_foul_tip', 'description_hit_by_pitch', 'description_hit_into_play', 
-            'description_pitchout', 'description_swinging_strike', 'description_swinging_strike_blocked', 
+            'description_ball', 'description_blocked_ball', 'description_called_strike', 'description_foul',
+            'description_hit_by_pitch', 'description_hit_into_play', 
+            'description_pitchout', 'description_swinging_strike', 
             'type_B', 'type_S'
         ]
         
@@ -253,6 +253,12 @@ def load_training_data(csv, hasDataSet, batter_stats_csv, pitcher_stats_csv):
         df = pd.read_csv(csv)
         print('read dataset csv')
 
+        # late preprocessing to allow integration with live data
+        df['description_foul'] = (df['description_foul'].astype(bool) | df['description_foul_bunt'].astype(bool) 
+                                  | df['description_foul_tip'].astype(bool)).astype(float)
+        df['description_swinging_strike'] = (df['description_swinging_strike'].astype(bool) 
+                                             | df['description_swinging_strike_blocked'].astype(bool)).astype(float)
+
         # Shuffle and split the DataFrame into train and validation sets
         train_df, val_df = train_test_split(df, test_size=0.2, random_state=42, shuffle=True)
 
@@ -263,19 +269,19 @@ def load_training_data(csv, hasDataSet, batter_stats_csv, pitcher_stats_csv):
         print('finished processing datasets')
 
         # Save the train and val datasets using pickle
-        with open('./data/train_dataset_emb.pkl', 'wb') as f:
+        with open('./data/train_dataset_pitcher.pkl', 'wb') as f:
             pickle.dump(train_dataset, f)
-        with open('./data/val_dataset_emb.pkl', 'wb') as f:
+        with open('./data/val_dataset_pitcher.pkl', 'wb') as f:
             pickle.dump(val_dataset, f)
         
         return train_dataset, val_dataset
     else:
         # Load the train and val datasets from pickle
-        print('loading train_dataset from pickle')
-        with open('./data/train_dataset_emb.pkl', 'rb') as f:
+        print('loading train_dataset f from pickle')
+        with open('./data/train_dataset_pitcher.pkl', 'rb') as f:
             train_dataset = pickle.load(f)
-        print('loading val_dataset from pickle')
-        with open('./data/val_dataset_emb.pkl', 'rb') as f:
+        print('loading val_dataset f from pickle')
+        with open('./data/val_dataset_pitcher.pkl', 'rb') as f:
             val_dataset = pickle.load(f)
         
         return train_dataset, val_dataset
