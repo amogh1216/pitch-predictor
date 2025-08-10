@@ -1,6 +1,6 @@
 # pitch predictor
 
-Pitch Predictor is a LSTM-powered MLB pitch prediction full-stack web application. The application itself is a live dashboard for MLB games, and hosts a custom-built LSTM that predicts pitch types in real-time. It consists of a FastAPI backend that has endpoints for the purpose of model inference (pitch prediction) and retrieving live data, as well as a React frontend for visualization and interaction.
+Pitch Predictor is a LSTM-powered MLB pitch prediction application. The application itself is a full-stack live dashboard for MLB games, and hosts a custom-built LSTM that predicts pitch types in real-time. It consists of a FastAPI backend that has endpoints for the purpose of model inference (pitch prediction) and retrieving live data, as well as a React frontend for visualization and interaction.
 
 ## Repository Structure
 
